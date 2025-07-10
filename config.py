@@ -19,6 +19,7 @@ DISCORD_PREFIX = "%"
 
 # Other External Keys
 LAUNCH_TIME = datetime.utcnow()
+OWNER_ID = 111941993629806592
 
 # Login Clients
 intents = discord.Intents.default()

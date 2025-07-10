@@ -10,6 +10,7 @@ from discord.ui import View, Button
 from datetime import datetime
 
 from core.utils import log_command_usage, check_permissions, get_embed_colour, DB_PATH
+from config import OWNER_ID
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Logging Configuration
@@ -106,8 +107,7 @@ class UtilityCog(commands.Cog):
         return True
 
     async def owner_check(self, interaction: discord.Interaction):
-        owner_id = 111941993629806592
-        return interaction.user.id == owner_id
+        return interaction.user.id == OWNER_ID
 
 
     # ---------------------------------------------------------------------------------------------------------------------
