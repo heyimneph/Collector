@@ -6,6 +6,7 @@ from discord.ext import commands
 from discord.ext.commands import has_permissions
 
 from core.utils import log_command_usage, check_permissions, DB_PATH
+from config import OWNER_ID
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Logging Configuration
@@ -39,8 +40,7 @@ class CustomisationCog(commands.Cog):
         self.bot = bot
 
     async def owner_check(self, interaction: discord.Interaction):
-        owner_id = 111941993629806592
-        return interaction.user.id == owner_id
+        return interaction.user.id == OWNER_ID
 
     # ---------------------------------------------------------------------------------------------------------------------
     @app_commands.command(description="Owner: Change the bot's avatar.")

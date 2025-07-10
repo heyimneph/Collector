@@ -1,0 +1,27 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+
+# Databases and logs
+data/databases/*.db
+data/logs/
+
+# Virtual environments
+venv/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+
+# Others
+.DS_Store
+*.sqlite3
