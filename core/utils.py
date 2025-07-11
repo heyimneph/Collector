@@ -78,8 +78,8 @@ async def log_command_usage(bot, interaction):
                             logger.warning(f"Invalid log_channel_id for guild {guild.id}: {row[0]}")
 
                 if not log_channel:
-                    logger.info(f"Checking for fallback channel 'pebble_logs' in guild {guild.id}")
-                    log_channel = discord.utils.get(guild.text_channels, name='pebble_logs')
+                    logger.info(f"Checking for fallback channel 'collector_logs' in guild {guild.id}")
+                    log_channel = discord.utils.get(guild.text_channels, name='collector_logs')
 
         # Construct and send embed if we have a destination
         if log_channel:
