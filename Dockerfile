@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Ensure the directories are created
 RUN mkdir -p /app/data/databases \
-    && mkdir -p /app/data/logs \
+    && mkdir -p /app/data/logs
 
 
 # Use the entry point script to start the container
