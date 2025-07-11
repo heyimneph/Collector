@@ -13,13 +13,14 @@ load_dotenv(".env")
 
 # Grab API tokens from the .env file and other things
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+OWNER_ID = os.getenv('OWNER_ID')
 
 # Discord
 DISCORD_PREFIX = "%"
 
 # Other External Keys
 LAUNCH_TIME = datetime.utcnow()
-OWNER_ID = 111941993629806592
+
 
 # Login Clients
 intents = discord.Intents.default()

@@ -5,6 +5,8 @@ import aiosqlite
 from functools import wraps
 from discord.ui import View, Button
 
+from config import OWNER_ID
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Logging Configuration
 # ---------------------------------------------------------------------------------------------------------------------
@@ -116,7 +118,7 @@ async def log_command_usage(bot, interaction):
 # Permissions Check
 # ---------------------------------------------------------------------------------------------------------------------
 async def check_permissions(interaction):
-    if interaction.user.id == interaction.client.owner_id:
+    if interaction.user.id == OWNER_ID:
         return True
 
     if interaction.user.guild_permissions.administrator:
