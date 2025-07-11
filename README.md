@@ -21,7 +21,7 @@ Collector is a Discord bot designed for community servers. It randomly drops col
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/collector-bot.git
+git clone https://github.com/heyimneph/collector-bot.git
 cd collector-bot
 ```
 
