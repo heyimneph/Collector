@@ -17,10 +17,10 @@ DB_DIR = os.path.join('data', 'databases')
 DB_PATH = os.path.join(DB_DIR, 'collector.db')
 os.makedirs(DB_DIR, exist_ok=True)
 
+
 def get_db_path() -> str:
     """Return the location of the bot's SQLite database."""
     return DB_PATH
-
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -31,8 +31,8 @@ async def get_embed_colour(guild_id):
         guild_id = int(guild_id)
         async with aiosqlite.connect(DB_PATH) as conn:
             async with conn.execute(
-                'SELECT value FROM customisation WHERE type = ? AND guild_id = ?',
-                ("embed_color", guild_id)
+                    'SELECT value FROM customisation WHERE type = ? AND guild_id = ?',
+                    ("embed_color", guild_id)
             ) as cursor:
                 row = await cursor.fetchone()
                 if row and row[0]:
@@ -69,7 +69,7 @@ async def log_command_usage(bot, interaction):
             async with aiosqlite.connect(DB_PATH) as conn:
                 logger.info(f"Connected to the database at {DB_PATH}")
                 async with conn.execute(
-                    'SELECT log_channel_id FROM config WHERE guild_id = ?', (guild.id,)
+                        'SELECT log_channel_id FROM config WHERE guild_id = ?', (guild.id,)
                 ) as cursor:
                     row = await cursor.fetchone()
 
@@ -101,7 +101,8 @@ async def log_command_usage(bot, interaction):
 
             await log_channel.send(embed=embed)
         else:
-            logger.info(f"No log channel found for command '{interaction.command.name}' in guild {guild.id if guild else 'DM'}.")
+            logger.info(
+                f"No log channel found for command '{interaction.command.name}' in guild {guild.id if guild else 'DM'}.")
 
     except aiosqlite.Error as e:
         logger.error(f"SQLite error while logging command: {e}")
@@ -109,6 +110,7 @@ async def log_command_usage(bot, interaction):
         command_name = interaction.command.name if interaction.command else "Unknown"
         logger.error(f"Unexpected error logging command usage for '{command_name}': {e}")
         logger.error(f"Interaction data: {interaction.data}")
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Permissions Check
@@ -126,9 +128,3 @@ async def check_permissions(interaction):
         ''', (interaction.guild_id, interaction.user.id))
         permission = await cursor.fetchone()
         return permission and permission[0]
-
-
-
-
-
-
