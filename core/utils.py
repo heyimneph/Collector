@@ -6,6 +6,11 @@ from functools import wraps
 from discord.ui import View, Button
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Database Configuration
 # ---------------------------------------------------------------------------------------------------------------------
 DB_DIR = os.path.join('data', 'databases')
@@ -16,10 +21,7 @@ def get_db_path() -> str:
     """Return the location of the bot's SQLite database."""
     return DB_PATH
 
-# ---------------------------------------------------------------------------------------------------------------------
-# Logging Configuration
-# ---------------------------------------------------------------------------------------------------------------------
-logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Get Embed Colour
@@ -112,6 +114,9 @@ async def log_command_usage(bot, interaction):
 # Permissions Check
 # ---------------------------------------------------------------------------------------------------------------------
 async def check_permissions(interaction):
+    if interaction.user.id == interaction.client.owner_id:
+        return True
+
     if interaction.user.guild_permissions.administrator:
         return True
 
@@ -121,6 +126,7 @@ async def check_permissions(interaction):
         ''', (interaction.guild_id, interaction.user.id))
         permission = await cursor.fetchone()
         return permission and permission[0]
+
 
 
 

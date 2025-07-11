@@ -119,13 +119,11 @@ class UtilityCog(commands.Cog):
 
             # Main help intro page
             help_intro = discord.Embed(
-                title="About Pebble",
+                title="About Collector",
                 description=(
-                    "*Hey there! I'm **Pebble** – your cozy digital companion designed to help couples bond, "
-                    "grow, and connect even when you're apart.*\n\n"
-                    "I offer thoughtful prompts, countdowns to special moments, shared goals, and fun games "
-                    "to spark joy in your relationship. 💞\n\n"
-                    "*Use the buttons below to browse all commands and features.*"
+                    "Welcome to **Collector** – a server-wide item drop game!\n\n"
+                    "Items will randomly appear in text channels. The first person to `✅ Claim` wins a point.\n"
+                    "Or, you can choose to `❌ Destroy` it instead – just to be evil 😈.\n\n"
                 ),
                 color=colour
             )
@@ -134,14 +132,10 @@ class UtilityCog(commands.Cog):
             help_intro.add_field(
                 name="Getting Started",
                 value=(
-                    "1. Run `/set_prompt_channel`\n"
-                    "*Start your mornings with daily conversation starters.*\n"
-                    "2. Try `/countdown`\n"
-                    "*Set a timer for your next date, trip, or anniversary.*\n"
-                    "3. Play a game together: `/wyr`, `/ttt`, `/rps`\n"
-                    "*Because love should be fun too!*\n"
-                    "4. Listen to music together with `/play`\n"
-                    "*Background music while you game or talk!*\n"
+                    "1. Run `/set_item_image`\n"
+                    "*Choose your item to begin collecting!*\n"
+                    "2. Try `/set_item_channel` \n"
+                    "*This will limit where Collector posts*`\n"
                 )
             )
             help_intro.add_field(name="",value="",inline=False)
@@ -167,8 +161,8 @@ class UtilityCog(commands.Cog):
             updates_page = discord.Embed(
                 title="Latest Updates",
                 description=(
-                    "08/04/2025\n"
-                    "- Pebble is live \n\n"
+                    "011/07/2025\n"
+                    "- Collector is live \n\n"
                 ),
                 color=colour
             )
@@ -185,7 +179,7 @@ class UtilityCog(commands.Cog):
             await log_command_usage(self.bot, interaction)
 
     # ---------------------------------------------------------------------------------------------------------------------
-    @app_commands.command(description="Admin: Authorize a user to use Woof Admin commands.")
+    @app_commands.command(description="Admin: Authorize a user to use Admin commands.")
     @app_commands.describe(user="The user to authorize")
     @app_commands.checks.has_permissions(administrator=True)
     async def authorise(self, interaction: discord.Interaction, user: discord.User):
@@ -207,7 +201,7 @@ class UtilityCog(commands.Cog):
         finally:
             await log_command_usage(self.bot, interaction)
 
-    @app_commands.command(description="Admin: Revoke a user's authorization to use Woof's Admin commands.")
+    @app_commands.command(description="Admin: Revoke a user's authorization to use Admin commands.")
     @app_commands.describe(user="The user to unauthorize")
     @app_commands.checks.has_permissions(administrator=True)
     async def unauthorise(self, interaction: discord.Interaction, user: discord.User):
