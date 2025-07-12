@@ -122,8 +122,9 @@ class UtilityCog(commands.Cog):
                 title="About Collector",
                 description=(
                     "Welcome to **Collector** – a server-wide item drop game!\n\n"
-                    "Items will randomly appear in text channels. The first person to `✅ Claim` wins a point.\n"
-                    "Or, you can choose to `❌ Destroy` it instead – just to be evil 😈.\n\n"
+                    "Items will randomly appear in text channels. "
+                    "The first person to `Claim` wins a point... or you can be a little evil and "
+                    "`Destroy` it instead \n\n"
                 ),
                 color=colour
             )
@@ -135,7 +136,7 @@ class UtilityCog(commands.Cog):
                     "1. Run `/set_item_image`\n"
                     "*Choose your item to begin collecting!*\n"
                     "2. Try `/set_item_channel` \n"
-                    "*This will limit where Collector posts*`\n"
+                    "*This will limit where Collector posts*\n"
                 )
             )
             help_intro.add_field(name="",value="",inline=False)
@@ -161,7 +162,7 @@ class UtilityCog(commands.Cog):
             updates_page = discord.Embed(
                 title="Latest Updates",
                 description=(
-                    "011/07/2025\n"
+                    "11/07/2025\n"
                     "- Collector is live \n\n"
                 ),
                 color=colour

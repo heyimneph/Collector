@@ -13,7 +13,7 @@ load_dotenv(".env")
 
 # Grab API tokens from the .env file and other things
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-OWNER_ID = os.getenv('OWNER_ID')
+OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 # Discord
 DISCORD_PREFIX = "%"

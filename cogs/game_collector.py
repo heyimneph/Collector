@@ -26,7 +26,7 @@ class ItemView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-    @discord.ui.button(label="✅ Claim", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Claim", style=discord.ButtonStyle.success)
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             if self.claimed:
@@ -61,9 +61,9 @@ class ItemView(discord.ui.View):
 
         except Exception as e:
             logger.exception(f"Error while claiming item in guild {interaction.guild.id}")
-            await interaction.response.send_message("❌ Something went wrong while claiming the item.", ephemeral=True)
+            await interaction.response.send_message("Something went wrong while claiming the item.", ephemeral=True)
 
-    @discord.ui.button(label="❌ Destroy", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Destroy", style=discord.ButtonStyle.danger)
     async def destroy(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             if self.claimed:
@@ -89,7 +89,7 @@ class ItemView(discord.ui.View):
 
         except Exception as e:
             logger.exception(f"Error while destroying item in guild {interaction.guild.id}")
-            await interaction.response.send_message("❌ Something went wrong while destroying the item.", ephemeral=True)
+            await interaction.response.send_message("Something went wrong while destroying the item.", ephemeral=True)
 
 
 # -----------------------------------------------------------------------------------------------------------------
@@ -109,7 +109,7 @@ class LeaderboardView(discord.ui.View):
             logger.info(f"{interaction.user} opened local leaderboard in guild {interaction.guild.id}")
         except Exception as e:
             logger.exception("Error while sending leaderboard.")
-            await interaction.response.send_message("❌ Failed to display leaderboard.", ephemeral=True)
+            await interaction.response.send_message("Failed to display leaderboard.", ephemeral=True)
 
     @discord.ui.button(label="🌐 View Global", style=discord.ButtonStyle.secondary)
     async def toggle_view(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -121,7 +121,7 @@ class LeaderboardView(discord.ui.View):
             logger.info(f"{interaction.user} toggled to {'global' if self.global_view else 'local'} leaderboard in guild {interaction.guild.id}")
         except Exception as e:
             logger.exception("Error toggling leaderboard view.")
-            await interaction.response.send_message("❌ Failed to update leaderboard view.", ephemeral=True)
+            await interaction.response.send_message("Failed to update leaderboard view.", ephemeral=True)
 
     async def build_leaderboard_embed(self, interaction: discord.Interaction) -> discord.Embed:
         try:
@@ -198,7 +198,7 @@ class ItemDrop(commands.Cog):
                     await conn.execute('''
                         INSERT OR IGNORE INTO item_settings (guild_id, drop_channel_id, message, image_url, claim_text, destroy_text)
                         VALUES (?, NULL, 'An item has appeared! Press a button!',
-                        'https://example.com/item.png', '{user} claimed it!', '{user} destroyed it!')
+                        'https://imgur.com/CoVltbo.png', '{user} claimed it!', '{user} destroyed it!')
                     ''', (guild.id,))
                     self.next_drop_times[guild.id] = datetime.utcnow() + timedelta(minutes=random.randint(15, 60))
 
@@ -210,14 +210,14 @@ class ItemDrop(commands.Cog):
         except Exception:
             logger.exception("Error initializing ItemDrop during on_ready.")
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(seconds=30)
     async def item_drop_task(self):
-        now = datetime.utcnow()
+        logger.info(f"[Tick] item_drop_task at {datetime.utcnow()}")
 
         for guild in self.bot.guilds:
             try:
-                if now < self.next_drop_times[guild.id]:
-                    continue  # skip if it's not yet time for this guild
+                if random.randint(1, 120) != 1:
+                    continue
 
                 async with aiosqlite.connect(DB_PATH) as conn:
                     cursor = await conn.execute('''
@@ -258,10 +258,7 @@ class ItemDrop(commands.Cog):
                     embed.set_image(url=image_url)
 
                 await channel.send(embed=embed, view=ItemView(author_id=self.bot.user.id, bot=self.bot))
-                logger.info(f"Dropped item in guild {guild.id} in channel {channel.id}")
-
-                # 🔁 Reschedule next drop with randomness
-                self.next_drop_times[guild.id] = now + timedelta(minutes=random.randint(15, 60))
+                logger.info(f"[DROP] Item dropped in guild {guild.id} in channel {channel.id}")
 
             except Exception:
                 logger.exception(f"Error during item drop for guild {guild.id}")
@@ -293,11 +290,11 @@ class ItemDrop(commands.Cog):
                 await conn.commit()
 
             logger.info(f"Set item drop channel to {channel.id} in guild {interaction.guild.id}")
-            await interaction.response.send_message(f"✅ Drop channel set to {channel.mention}.", ephemeral=True)
+            await interaction.response.send_message(f"Drop channel set to {channel.mention}.", ephemeral=True)
 
         except Exception:
             logger.exception("Failed to set item drop channel.")
-            await interaction.response.send_message("❌ Failed to set drop channel.", ephemeral=True)
+            await interaction.response.send_message("Failed to set drop channel.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -313,11 +310,11 @@ class ItemDrop(commands.Cog):
                 await conn.commit()
 
             logger.info(f"Updated item message in guild {interaction.guild.id}: {message}")
-            await interaction.response.send_message("✅ Drop message updated.", ephemeral=True)
+            await interaction.response.send_message("Drop message updated.", ephemeral=True)
 
         except Exception:
             logger.exception("Failed to update item message.")
-            await interaction.response.send_message("❌ Failed to update message.", ephemeral=True)
+            await interaction.response.send_message("Failed to update message.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -333,11 +330,11 @@ class ItemDrop(commands.Cog):
                 await conn.commit()
 
             logger.info(f"Updated item image URL in guild {interaction.guild.id}: {image_url}")
-            await interaction.response.send_message("✅ Image URL updated.", ephemeral=True)
+            await interaction.response.send_message("Image URL updated.", ephemeral=True)
 
         except Exception:
             logger.exception("Failed to update image URL.")
-            await interaction.response.send_message("❌ Failed to update image URL.", ephemeral=True)
+            await interaction.response.send_message("Failed to update image URL.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -353,11 +350,11 @@ class ItemDrop(commands.Cog):
                 await conn.commit()
 
             logger.info(f"Updated claim text in guild {interaction.guild.id}: {text}")
-            await interaction.response.send_message("✅ Claim text updated.", ephemeral=True)
+            await interaction.response.send_message("Claim text updated.", ephemeral=True)
 
         except Exception:
             logger.exception("Failed to update claim text.")
-            await interaction.response.send_message("❌ Failed to update claim text.", ephemeral=True)
+            await interaction.response.send_message("Failed to update claim text.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -373,11 +370,11 @@ class ItemDrop(commands.Cog):
                 await conn.commit()
 
             logger.info(f"Updated destroy text in guild {interaction.guild.id}: {text}")
-            await interaction.response.send_message("✅ Destroy text updated.", ephemeral=True)
+            await interaction.response.send_message("Destroy text updated.", ephemeral=True)
 
         except Exception:
             logger.exception("Failed to update destroy text.")
-            await interaction.response.send_message("❌ Failed to update destroy text.", ephemeral=True)
+            await interaction.response.send_message("Failed to update destroy text.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -389,9 +386,30 @@ class ItemDrop(commands.Cog):
             logger.info(f"{interaction.user} used /leaderboard in guild {interaction.guild.id}")
         except Exception:
             logger.exception("Failed to show leaderboard.")
-            await interaction.response.send_message("❌ Failed to show leaderboard.", ephemeral=True)
+            await interaction.response.send_message("Failed to show leaderboard.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
+
+# -----------------------------------------------------------------------------------------------------------------
+# Listeners
+# -----------------------------------------------------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute('''
+                    INSERT OR IGNORE INTO item_settings (guild_id, drop_channel_id, message, image_url, claim_text, destroy_text)
+                    VALUES (?, NULL, 'An item has appeared! Press a button!',
+                            'https://example.com/item.png', '{user} claimed it!', '{user} destroyed it!')
+                ''', (guild.id,))
+                await conn.commit()
+
+            logger.info(f"Initialized item_settings for new guild {guild.id}")
+
+        except Exception:
+            logger.exception(f"Failed to initialize settings for new guild {guild.id}")
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Setup
