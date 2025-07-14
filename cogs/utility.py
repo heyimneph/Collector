@@ -119,9 +119,9 @@ class UtilityCog(commands.Cog):
 
             # Main help intro page
             help_intro = discord.Embed(
-                title="About Collector",
+                title="About Eggbot",
                 description=(
-                    "Welcome to **Collector** – a server-wide item drop game!\n\n"
+                    "Welcome to **Eggbot** – a server-wide item drop game!\n\n"
                     "Items will randomly appear in text channels. "
                     "The first person to `Claim` wins a point... or you can be a little evil and "
                     "`Destroy` it instead \n\n"
@@ -136,7 +136,7 @@ class UtilityCog(commands.Cog):
                     "1. Run `/set_item_image`\n"
                     "*Choose your item to begin collecting!*\n"
                     "2. Try `/set_item_channel` \n"
-                    "*This will limit where Collector posts*\n"
+                    "*This will limit where Eggbot posts*\n"
                 )
             )
             help_intro.add_field(name="",value="",inline=False)
@@ -162,8 +162,12 @@ class UtilityCog(commands.Cog):
             updates_page = discord.Embed(
                 title="Latest Updates",
                 description=(
+                    "14/07/2025 \n"
+                    "- Massive QoL improvements \n"
+                    "- More customisation \n"
+                    "- Added a 'rare' drop' \n\n"
                     "11/07/2025\n"
-                    "- Collector is live \n\n"
+                    "- Eggbot is live \n\n"
                 ),
                 color=colour
             )
@@ -176,6 +180,68 @@ class UtilityCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error with Help command: {e}")
             await interaction.response.send_message("Failed to fetch help information.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    # ---------------------------------------------------------------------------------------------------------------------
+
+    @app_commands.command(name="stats", description="User: Show statistics for Eggbot.")
+    async def stats(self, interaction: discord.Interaction):
+        colour = await get_embed_colour(interaction.guild.id)
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                cursor = await conn.execute("SELECT SUM(items_collected) FROM item_stats")
+                total_collected = (await cursor.fetchone())[0] or 0
+
+                cursor = await conn.execute("SELECT SUM(items_destroyed) FROM item_stats")
+                total_destroyed = (await cursor.fetchone())[0] or 0
+
+            total_servers = len(self.bot.guilds)
+            total_users = sum(len(guild.members) for guild in self.bot.guilds)
+
+            bot_ping = round(self.bot.latency * 1000)
+            bot_uptime = datetime.utcnow() - self.bot_start_time
+            days, remainder = divmod(bot_uptime.total_seconds(), 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, _ = divmod(remainder, 60)
+
+            uptime_display = []
+            if days > 0:
+                uptime_display.append(f"{int(days)} day(s)")
+            if hours > 0:
+                uptime_display.append(f"{int(hours)} hour(s)")
+            if minutes > 0:
+                uptime_display.append(f"{int(minutes)} minute(s)")
+
+            if len(uptime_display) > 1:
+                uptime_display = ', '.join(uptime_display[:-1]) + ' and ' + uptime_display[-1]
+            elif uptime_display:
+                uptime_display = uptime_display[0]
+            else:
+                uptime_display = "0 minute(s)"
+
+            cpu = psutil.cpu_percent()
+            memory = psutil.virtual_memory().percent
+
+            embed = discord.Embed(title="", description="",
+                                  color=colour)
+
+            embed.add_field(name="🥚 Items", value=f"┕ `{total_collected}`", inline=True)
+            embed.add_field(name="💥 Destroyed", value=f"┕ `{total_destroyed}`", inline=True)
+            embed.add_field(name="🧑 Users", value=f"┕ `{total_users}`", inline=True)
+            embed.add_field(name="🏡 Servers", value=f"┕ `{total_servers}`", inline=True)
+            embed.add_field(name="🏓 Ping", value=f"┕ `{bot_ping} ms`", inline=True)
+            embed.add_field(name="🌐 Language", value=f"┕ `Python`", inline=True)
+            embed.add_field(name="‍💻 CPU", value=f"┕ `{cpu}%`", inline=True)
+            embed.add_field(name="💾 Memory", value=f"┕ `{memory}%`", inline=True)
+            embed.add_field(name="⏳ Uptime", value=f"┕ `{uptime_display}`", inline=True)
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.exception(f"Error generating stats: {e}")
+            await interaction.response.send_message("Failed to load stats.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
