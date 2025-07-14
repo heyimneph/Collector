@@ -437,15 +437,15 @@ class ItemDrop(commands.Cog):
 # -----------------------------------------------------------------------------------------------------------------
 # Game Commands
 # -----------------------------------------------------------------------------------------------------------------
-    @app_commands.command(description="Owner: Set the 1-in-X drop chance")
+    @app_commands.command(description="Owner: Set the 1-in-X drop chance (1 - 500")
     async def set_drop_chance(self, interaction: discord.Interaction, chance: int):
         owner_id = self.bot.owner_id or (await self.bot.application_info()).owner.id
         if interaction.user.id != owner_id:
             await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
             return
 
-        if chance < 1 or chance > 1000:
-            await interaction.response.send_message("Please provide a value between 1 and 1000.", ephemeral=True)
+        if chance < 30 or chance > 500:
+            await interaction.response.send_message("Please provide a value between 30 and 600.", ephemeral=True)
             return
 
         async with aiosqlite.connect(DB_PATH) as conn:
@@ -461,13 +461,13 @@ class ItemDrop(commands.Cog):
         await interaction.response.send_message(f"Drop chance updated to `1 in {chance}`.", ephemeral=True)
 
     @app_commands.command(description="Admin: Set how long (in minutes) item drops last before auto-deletion.")
-    @app_commands.describe(minutes="Expiration time in minutes (5–1440)")
+    @app_commands.describe(minutes="Expiration time in minutes (5 - 1440)")
     async def set_expiry_time(self, interaction: discord.Interaction, minutes: int):
         if not await check_permissions(interaction):
             await interaction.response.send_message("You don't have permission.", ephemeral=True)
             return
 
-        if minutes < 5 or minutes > 1440:
+        if minutes < 1 or minutes > 1440:
             await interaction.response.send_message("Please choose a value between 5 and 1440 (24h).", ephemeral=True)
             return
 

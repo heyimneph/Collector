@@ -133,10 +133,12 @@ class UtilityCog(commands.Cog):
             help_intro.add_field(
                 name="Getting Started",
                 value=(
-                    "1. Run `/set_item_image`\n"
+                    "1. Run `/set_default_image`\n"
                     "*Choose your item to begin collecting!*\n"
-                    "2. Try `/set_item_channel` \n"
+                    "2. Try `/set_drop_channel` \n"
                     "*This will limit where Eggbot posts*\n"
+                    "3. Try `/leaderboard` \n"
+                    "*See how you compare locally and globally!"
                 )
             )
             help_intro.add_field(name="",value="",inline=False)
