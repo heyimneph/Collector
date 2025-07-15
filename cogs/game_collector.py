@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 from core.utils import DB_PATH, get_embed_colour, log_command_usage, check_permissions
+from config import OWNER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,6 @@ class ItemView(discord.ui.View):
             self.claimed = True
             await self.disable_all()
 
-            # Determine if it's a rare drop
             embed = interaction.message.embeds[0]
             is_rare = embed.author and "RARE DROP" in embed.author.name if embed.author else False
 
@@ -61,27 +61,34 @@ class ItemView(discord.ui.View):
                     ''', (interaction.guild.id, interaction.user.id))
 
                 cursor = await conn.execute(
-                    "SELECT claim_text, claim_image_url, rare_role_id FROM item_settings WHERE guild_id = ?",
+                    '''SELECT claim_text, claim_image_url, rare_claim_image, rare_role_id,
+                              rare_image_url, rare_claim_text
+                       FROM item_settings WHERE guild_id = ?''',
                     (interaction.guild.id,)
                 )
                 row = await cursor.fetchone()
-                claim_text = row[0] if row else "{user} claimed it!"
-                claim_image = row[1] if row and row[1] else None
-                rare_role_id = row[2] if row and len(row) > 2 else None
+                claim_text = (
+                    row[5] if is_rare and row and row[5]
+                    else row[0] if row else "{user} claimed it!"
+                )
+                claim_image = (
+                    row[2] if is_rare and row and row[2]
+                    else (row[4] if is_rare and row and row[4] else row[1])
+                )
+                rare_role_id = row[3] if row and len(row) > 3 else None
 
                 await conn.commit()
 
-            # Update embed
             embed.description = claim_text.replace("{user}", interaction.user.mention)
             embed.color = discord.Color.green()
             embed.set_footer(text=f"Claimed by {interaction.user.display_name}")
             embed.timestamp = discord.utils.utcnow()
+
             if claim_image:
                 embed.set_image(url=claim_image)
 
             await interaction.response.edit_message(embed=embed, view=self)
 
-            # Grant rare role if it's a rare drop and a role is configured
             if is_rare and rare_role_id:
                 role = interaction.guild.get_role(rare_role_id)
                 if role:
@@ -110,6 +117,9 @@ class ItemView(discord.ui.View):
             self.claimed = True
             await self.disable_all()
 
+            embed = interaction.message.embeds[0]
+            is_rare = embed.author and "RARE DROP" in embed.author.name if embed.author else False
+
             async with aiosqlite.connect(DB_PATH) as conn:
                 await conn.execute('''
                     INSERT INTO item_stats (guild_id, user_id, items_destroyed)
@@ -119,16 +129,23 @@ class ItemView(discord.ui.View):
                 ''', (interaction.guild.id, interaction.user.id))
 
                 cursor = await conn.execute(
-                    "SELECT destroy_text, destroy_image_url FROM item_settings WHERE guild_id = ?",
+                    '''SELECT destroy_text, destroy_image_url, rare_destroy_image,
+                              rare_image_url, rare_destroy_text
+                       FROM item_settings WHERE guild_id = ?''',
                     (interaction.guild.id,)
                 )
                 row = await cursor.fetchone()
-                destroy_text = row[0] if row else "{user} destroyed it!"
-                destroy_image = row[1] if row and row[1] else None
+                destroy_text = (
+                    row[4] if is_rare and row and row[4]
+                    else row[0] if row else "{user} destroyed it!"
+                )
+                destroy_image = (
+                    row[2] if is_rare and row and row[2]
+                    else (row[3] if is_rare and row and row[3] else row[1])
+                )
 
                 await conn.commit()
 
-            embed = interaction.message.embeds[0]
             embed.description = destroy_text.replace("{user}", interaction.user.mention)
             embed.color = discord.Color.red()
             embed.set_footer(text=f"Destroyed by {interaction.user.display_name}")
@@ -155,11 +172,10 @@ class LeaderboardView(discord.ui.View):
         self.guild_id = guild_id
         self.global_view = False
 
-    async def start(self, interaction: discord.Interaction):
+    async def start(self, interaction: discord.Interaction, ephemeral: bool = False):
         try:
             embed = await self.build_leaderboard_embed(interaction)
-            await interaction.response.send_message(embed=embed, view=self)
-            logger.info(f"{interaction.user} opened local leaderboard in guild {interaction.guild.id}")
+            await interaction.response.send_message(embed=embed, view=self, ephemeral=ephemeral)
         except Exception as e:
             logger.exception("Error while sending leaderboard.")
             await interaction.response.send_message("Failed to display leaderboard.", ephemeral=True)
@@ -206,8 +222,17 @@ class LeaderboardView(discord.ui.View):
             else:
                 desc = ""
                 for i, (user_id, total) in enumerate(rows, 1):
-                    user = interaction.guild.get_member(user_id) or self.bot.get_user(user_id)
-                    name = user.display_name if isinstance(user, discord.Member) else (user.name if user else f"<@{user_id}>")
+                    user = interaction.guild.get_member(user_id)
+                    if not user:
+                        user = self.bot.get_user(user_id)
+                    if not user:
+                        try:
+                            user = await self.bot.fetch_user(user_id)
+                        except Exception:
+                            user = None
+
+                    name = user.display_name if isinstance(user, discord.Member) else str(
+                        user) if user else f"<@{user_id}>"
                     desc += f"**{i}.** {name} — `{total}`\n"
 
             embed = discord.Embed(
@@ -224,14 +249,15 @@ class LeaderboardView(discord.ui.View):
             logger.exception("Error building leaderboard embed.")
             return discord.Embed(description="Failed to load leaderboard.", color=discord.Color.red())
 
+
 # -----------------------------------------------------------------------------------------------------------------
 # Game Class
 # -----------------------------------------------------------------------------------------------------------------
 class ItemDrop(commands.Cog):
     def __init__(self, bot):
-        self.drop_chance_denominator = 120
-
         self.bot = bot
+        self.drop_chance_denominator = 120
+        self.drop_interval = 60
         self.next_drop_times = defaultdict(lambda: datetime.utcnow())
         self.start_time = datetime.utcnow()
 
@@ -248,12 +274,10 @@ class ItemDrop(commands.Cog):
             self.bot._itemdrop_started = True
 
             try:
-                # Register persistent button view (needed across restarts)
                 self.bot.add_view(ItemView(bot=self.bot, author_id=self.bot.user.id))
                 logger.info("ItemView registered for persistent button support.")
 
                 async with aiosqlite.connect(DB_PATH) as conn:
-                    # Ensure config table and default drop chance exist
                     await conn.execute('''
                         CREATE TABLE IF NOT EXISTS item_config (
                             key TEXT PRIMARY KEY,
@@ -265,19 +289,20 @@ class ItemDrop(commands.Cog):
                         VALUES ('drop_chance_denominator', '120')
                     ''')
 
-                    # Load current drop chance
                     cursor = await conn.execute("SELECT value FROM item_config WHERE key = 'drop_chance_denominator'")
                     row = await cursor.fetchone()
                     self.drop_chance_denominator = int(row[0]) if row else 120
                     logger.info(f"Loaded drop chance denominator: 1 in {self.drop_chance_denominator}")
 
-                    # Ensure default item_settings for all guilds
                     for guild in self.bot.guilds:
                         await conn.execute('''
                             INSERT OR IGNORE INTO item_settings (
                                 guild_id, drop_channel_id, message, image_url,
                                 claim_text, destroy_text, claim_image_url, destroy_image_url,
-                                rare_message, rare_image_url, rare_role_id, drop_expiry_minutes
+                                rare_message, rare_image_url,
+                                rare_default_text, rare_claim_image, rare_destroy_image,
+                                rare_claim_text, rare_destroy_text,
+                                rare_role_id, drop_expiry_minutes
                             ) VALUES (?, NULL,
                                 'Something dropped! Claim it or Destroy it!',
                                 'https://imgur.com/VZtZTOm.png',
@@ -287,14 +312,19 @@ class ItemDrop(commands.Cog):
                                 'https://imgur.com/UtVm1W9.png',
                                 'A rare item has appeared! Be the first to claim it!',
                                 'https://imgur.com/GLszyDB.png',
+                                'A rare event occurred!',
+                                NULL,
+                                NULL,
+                                '{user} claimed the rare item!',
+                                '{user} destroyed the rare item!',
                                 NULL,
                                 30
                             )
-                        ''', (guild.id,))
+                            ''', (guild.id,))
 
                     await conn.commit()
 
-                # Start background tasks
+                self.item_drop_task.change_interval(seconds=self.drop_interval)
                 self.item_drop_task.start()
                 self.cleanup_expired_drops.start()
                 logger.info("ItemDrop and cleanup tasks started.")
@@ -303,7 +333,7 @@ class ItemDrop(commands.Cog):
             except Exception:
                 logger.exception("Error initializing ItemDrop during on_ready.")
 
-    @tasks.loop(seconds=180)
+    @tasks.loop(seconds=0)
     async def item_drop_task(self):
         logger.info(f"[Tick] item_drop_task at {datetime.utcnow()}")
 
@@ -312,7 +342,6 @@ class ItemDrop(commands.Cog):
                 if random.randint(1, self.drop_chance_denominator) != 1:
                     continue
 
-                # Determine drop type: 1 in 50 chance to make it rare
                 drop_type = "normal"
                 if random.randint(1, 50) == 1:
                     drop_type = "rare"
@@ -320,16 +349,16 @@ class ItemDrop(commands.Cog):
                 async with aiosqlite.connect(DB_PATH) as conn:
                     cursor = await conn.execute('''
                         SELECT drop_channel_id, message, image_url,
-                               rare_message, rare_image_url
+                               rare_message, rare_image_url, rare_default_text
                         FROM item_settings WHERE guild_id = ?
                     ''', (guild.id,))
                     settings = await cursor.fetchone()
 
                 channel_id = None
                 if settings:
-                    (channel_id, msg, img, rare_msg, rare_img) = settings
+                    (channel_id, msg, img, rare_msg, rare_img, rare_default_text) = settings
                     if drop_type == "rare":
-                        message_text = rare_msg or "✨ A rare item has appeared! Be the first to claim it!"
+                        message_text = rare_msg or rare_default_text or "✨ A rare item has appeared!"
                         image_url = rare_img or "https://imgur.com/RgP7g0K.png"
                     else:
                         message_text = msg or "An item has appeared!"
@@ -358,8 +387,6 @@ class ItemDrop(commands.Cog):
                 embed.timestamp = discord.utils.utcnow()
                 if image_url:
                     embed.set_image(url=image_url)
-                if drop_type == "rare":
-                    embed.set_author(name="RARE DROP", icon_url="https://imgur.com/RgP7g0K.png")
 
                 view = ItemView(author_id=self.bot.user.id, bot=self.bot)
                 message = await channel.send(embed=embed, view=view)
@@ -437,15 +464,15 @@ class ItemDrop(commands.Cog):
 # -----------------------------------------------------------------------------------------------------------------
 # Game Commands
 # -----------------------------------------------------------------------------------------------------------------
-    @app_commands.command(description="Owner: Set the 1-in-X drop chance (1 - 500")
+    @app_commands.command(description="Owner: Set the 1-in-X drop chance (1 - 500)")
     async def set_drop_chance(self, interaction: discord.Interaction, chance: int):
         owner_id = self.bot.owner_id or (await self.bot.application_info()).owner.id
         if interaction.user.id != owner_id:
             await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
             return
 
-        if chance < 30 or chance > 500:
-            await interaction.response.send_message("Please provide a value between 30 and 600.", ephemeral=True)
+        if chance < 1 or chance > 500:
+            await interaction.response.send_message("Please provide a value between 30 and 500.", ephemeral=True)
             return
 
         async with aiosqlite.connect(DB_PATH) as conn:
@@ -513,6 +540,8 @@ class ItemDrop(commands.Cog):
         finally:
             await log_command_usage(self.bot, interaction)
 
+    # -----------------------------------------------------------------------------------------------------------------
+
     @app_commands.command(description="Admin: Set the drop message text.")
     async def set_default_message(self, interaction: discord.Interaction, message: str):
         try:
@@ -553,8 +582,10 @@ class ItemDrop(commands.Cog):
         finally:
             await log_command_usage(self.bot, interaction)
 
-    # -----------------------------------------------------------------------------------------------------------------
 
+
+
+    # -----------------------------------------------------------------------------------------------------------------
     @app_commands.command(description="Admin: Set image shown when someone claims the item.")
     async def set_claim_image(self, interaction: discord.Interaction, image_url: str):
         try:
@@ -573,6 +604,26 @@ class ItemDrop(commands.Cog):
         except Exception:
             logger.exception("Failed to update claim image URL.")
             await interaction.response.send_message("Failed to update claim image URL.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    @app_commands.command(description="Admin: Set the text shown when someone claims the item.")
+    async def set_claim_text(self, interaction: discord.Interaction, text: str):
+        try:
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("You don't have permission.", ephemeral=True)
+                return
+
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute('UPDATE item_settings SET claim_text = ? WHERE guild_id = ?', (text, interaction.guild.id))
+                await conn.commit()
+
+            logger.info(f"Updated claim text in guild {interaction.guild.id}: {text}")
+            await interaction.response.send_message("Claim text updated.", ephemeral=True)
+
+        except Exception:
+            logger.exception("Failed to update claim text.")
+            await interaction.response.send_message("Failed to update claim text.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
@@ -596,29 +647,6 @@ class ItemDrop(commands.Cog):
             await interaction.response.send_message("Failed to update destroy image URL.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
-
-    # -----------------------------------------------------------------------------------------------------------------
-
-    @app_commands.command(description="Admin: Set the text shown when someone claims the item.")
-    async def set_claim_text(self, interaction: discord.Interaction, text: str):
-        try:
-            if not await check_permissions(interaction):
-                await interaction.response.send_message("You don't have permission.", ephemeral=True)
-                return
-
-            async with aiosqlite.connect(DB_PATH) as conn:
-                await conn.execute('UPDATE item_settings SET claim_text = ? WHERE guild_id = ?', (text, interaction.guild.id))
-                await conn.commit()
-
-            logger.info(f"Updated claim text in guild {interaction.guild.id}: {text}")
-            await interaction.response.send_message("Claim text updated.", ephemeral=True)
-
-        except Exception:
-            logger.exception("Failed to update claim text.")
-            await interaction.response.send_message("Failed to update claim text.", ephemeral=True)
-        finally:
-            await log_command_usage(self.bot, interaction)
-
     @app_commands.command(description="Admin: Set the text shown when someone destroys the item.")
     async def set_destroy_text(self, interaction: discord.Interaction, text: str):
         try:
@@ -664,6 +692,103 @@ class ItemDrop(commands.Cog):
         finally:
             await log_command_usage(self.bot, interaction)
 
+    @app_commands.command(description="Admin: Set the default text shown for rare drops.")
+    async def set_rare_default_text(self, interaction: discord.Interaction, text: str):
+        if not await check_permissions(interaction):
+            await interaction.response.send_message("You don't have permission.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute('UPDATE item_settings SET rare_default_text = ? WHERE guild_id = ?',
+                                   (text, interaction.guild.id))
+                await conn.commit()
+            await interaction.response.send_message("Rare default text updated.", ephemeral=True)
+            logger.info(f"Updated rare_default_text for {interaction.guild.id}")
+        except Exception:
+            logger.exception("Failed to update rare_default_text.")
+            await interaction.response.send_message("Error updating rare default text.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    @app_commands.command(description="Admin: Set the text shown when someone claims a rare item.")
+    async def set_rare_claim_text(self, interaction: discord.Interaction, text: str):
+        if not await check_permissions(interaction):
+            await interaction.response.send_message("You don't have permission.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute(
+                    'UPDATE item_settings SET rare_claim_text = ? WHERE guild_id = ?',
+                    (text, interaction.guild.id)
+                )
+                await conn.commit()
+            await interaction.response.send_message("Rare claim text updated.", ephemeral=True)
+        except Exception:
+            logger.exception("Failed to update rare claim text.")
+            await interaction.response.send_message("Error updating rare claim text.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    @app_commands.command(description="Admin: Set the text shown when someone destroys a rare item.")
+    async def set_rare_destroy_text(self, interaction: discord.Interaction, text: str):
+        if not await check_permissions(interaction):
+            await interaction.response.send_message("You don't have permission.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute(
+                    'UPDATE item_settings SET rare_destroy_text = ? WHERE guild_id = ?',
+                    (text, interaction.guild.id)
+                )
+                await conn.commit()
+            await interaction.response.send_message("Rare destroy text updated.", ephemeral=True)
+        except Exception:
+            logger.exception("Failed to update rare destroy text.")
+            await interaction.response.send_message("Error updating rare destroy text.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    @app_commands.command(description="Admin: Set the image URL shown when someone claims a rare item.")
+    async def set_rare_claim_image(self, interaction: discord.Interaction, image_url: str):
+        if not await check_permissions(interaction):
+            await interaction.response.send_message("You don't have permission.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute('UPDATE item_settings SET rare_claim_image = ? WHERE guild_id = ?',
+                                   (image_url, interaction.guild.id))
+                await conn.commit()
+            await interaction.response.send_message("Rare claim image updated.", ephemeral=True)
+            logger.info(f"Updated rare_claim_image for {interaction.guild.id}")
+        except Exception:
+            logger.exception("Failed to update rare_claim_image.")
+            await interaction.response.send_message("Error updating rare claim image.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    @app_commands.command(description="Admin: Set the image URL shown when someone destroys a rare item.")
+    async def set_rare_destroy_image(self, interaction: discord.Interaction, image_url: str):
+        if not await check_permissions(interaction):
+            await interaction.response.send_message("You don't have permission.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                await conn.execute('UPDATE item_settings SET rare_destroy_image = ? WHERE guild_id = ?',
+                                   (image_url, interaction.guild.id))
+                await conn.commit()
+            await interaction.response.send_message("Rare destroy image updated.", ephemeral=True)
+            logger.info(f"Updated rare_destroy_image for {interaction.guild.id}")
+        except Exception:
+            logger.exception("Failed to update rare_destroy_image.")
+            await interaction.response.send_message("Error updating rare destroy image.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
     @app_commands.command(description="Admin: Set the role to give for rare item claims.")
     @app_commands.describe(role="The role to give when a rare drop is claimed.")
     async def set_rare_role(self, interaction: discord.Interaction, role: discord.Role):
@@ -694,12 +819,13 @@ class ItemDrop(commands.Cog):
     async def view_settings(self, interaction: discord.Interaction):
         try:
             async with aiosqlite.connect(DB_PATH) as conn:
-                # Guild-specific settings
                 cursor = await conn.execute('''
                     SELECT drop_channel_id, message, image_url,
                            claim_text, destroy_text,
                            claim_image_url, destroy_image_url,
                            rare_message, rare_image_url,
+                           rare_default_text, rare_claim_image, rare_destroy_image,
+                           rare_claim_text, rare_destroy_text,
                            rare_role_id, drop_expiry_minutes
                     FROM item_settings WHERE guild_id = ?
                 ''', (interaction.guild.id,))
@@ -713,42 +839,47 @@ class ItemDrop(commands.Cog):
                  claim_text, destroy_text,
                  claim_image_url, destroy_image_url,
                  rare_message, rare_image_url,
+                 rare_default_text, rare_claim_image, rare_destroy_image,
+                 rare_claim_text, rare_destroy_text,
                  rare_role_id, drop_expiry_minutes) = row
 
-                # Global drop chance from config
                 cursor = await conn.execute('SELECT value FROM item_config WHERE key = "drop_chance_denominator"')
                 chance_row = await cursor.fetchone()
                 drop_chance = int(chance_row[0]) if chance_row else 120
 
-            # Calculate approximate hourly drop chance
-            approx_hourly_chance = 1 - math.pow((drop_chance - 1) / drop_chance, 30)
+            drop_interval = getattr(self, "drop_interval", 180)
+            attempts_per_hour = round(3600 / drop_interval)
+            import math
+            approx_hourly_chance = 1 - math.pow((drop_chance - 1) / drop_chance, attempts_per_hour)
             approx_percent = round(approx_hourly_chance * 100, 2)
 
             embed = discord.Embed(title="Item Drop Settings", color=discord.Color.blurple())
 
             embed.add_field(name="Drop Channel", value=f"```{channel_id or 'Not set'}```", inline=False)
-            embed.add_field(name="Drop Message", value=f"```\n{message}\n```", inline=False)
+            embed.add_field(name="Drop Message", value=f"```\n{message}```", inline=False)
             embed.add_field(name="Drop Image", value=f"```{image_url or 'Not set'}```", inline=False)
 
-            embed.add_field(name="Claim Text", value=f"```\n{claim_text}\n```", inline=False)
+            embed.add_field(name="Claim Text", value=f"```\n{claim_text}```", inline=False)
             embed.add_field(name="Claim Image", value=f"```{claim_image_url or 'Not set'}```", inline=False)
 
-            embed.add_field(name="Destroy Text", value=f"```\n{destroy_text}\n```", inline=False)
+            embed.add_field(name="Destroy Text", value=f"```\n{destroy_text}```", inline=False)
             embed.add_field(name="Destroy Image", value=f"```{destroy_image_url or 'Not set'}```", inline=False)
 
-            embed.add_field(name="Rare Message", value=f"```\n{rare_message or 'Default message'}\n```", inline=False)
+            embed.add_field(name="Rare Message", value=f"```\n{rare_message or 'Default message'}```", inline=False)
             embed.add_field(name="Rare Image", value=f"```{rare_image_url or 'Not set'}```", inline=False)
+            embed.add_field(name="Rare Default Text", value=f"```\n{rare_default_text or 'Not set'}```", inline=False)
+            embed.add_field(name="Rare Claim Text", value=f"```\n{rare_claim_text or 'Not set'}```", inline=False)
+            embed.add_field(name="Rare Claim Image", value=f"```{rare_claim_image or 'Not set'}```", inline=False)
+            embed.add_field(name="Rare Destroy Text", value=f"```\n{rare_destroy_text or 'Not set'}```", inline=False)
+            embed.add_field(name="Rare Destroy Image", value=f"```{rare_destroy_image or 'Not set'}```", inline=False)
 
-            # Rare Role
             role = interaction.guild.get_role(rare_role_id) if rare_role_id else None
             role_display = role.mention if role else "Not set"
             embed.add_field(name="Rare Role", value=f"```{role_display}```", inline=False)
 
-            # Expiry Time
             expiry_display = f"{drop_expiry_minutes} minutes" if drop_expiry_minutes else "30 minutes (default)"
             embed.add_field(name="Drop Expiry Time", value=f"```{expiry_display}```", inline=False)
 
-            # Drop chance
             embed.add_field(
                 name="Drop Chance",
                 value=f"```1 in {drop_chance} (~{approx_percent}% per hour)```",
@@ -762,13 +893,14 @@ class ItemDrop(commands.Cog):
             await interaction.response.send_message(f"`Error: {e}`", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
+
     # -----------------------------------------------------------------------------------------------------------------
 
     @app_commands.command(description="User: Show the top collectors in this server or globally.")
     async def leaderboard(self, interaction: discord.Interaction):
         try:
             view = LeaderboardView(self.bot, interaction.guild.id)
-            await view.start(interaction)
+            await view.start(interaction, ephemeral=True)
             logger.info(f"{interaction.user} used /leaderboard in guild {interaction.guild.id}")
         except Exception:
             logger.exception("Failed to show leaderboard.")
@@ -776,7 +908,7 @@ class ItemDrop(commands.Cog):
         finally:
             await log_command_usage(self.bot, interaction)
 
-# -----------------------------------------------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------------------
 # Listeners
 # -----------------------------------------------------------------------------------------------------------------
 
@@ -788,7 +920,10 @@ class ItemDrop(commands.Cog):
                     INSERT OR IGNORE INTO item_settings (
                         guild_id, drop_channel_id, message, image_url,
                         claim_text, destroy_text, claim_image_url, destroy_image_url,
-                        rare_message, rare_image_url, rare_role_id, drop_expiry_minutes
+                        rare_message, rare_image_url,
+                        rare_default_text, rare_claim_image, rare_destroy_image,
+                        rare_claim_text, rare_destroy_text,
+                        rare_role_id, drop_expiry_minutes
                     ) VALUES (?, NULL,
                         'Something dropped! Claim it or Destroy it!',
                         'https://imgur.com/VZtZTOm.png',
@@ -798,16 +933,67 @@ class ItemDrop(commands.Cog):
                         'https://imgur.com/UtVm1W9.png',
                         'A rare item has appeared! Be the first to claim it!',
                         'https://imgur.com/GLszyDB.png',
+                        'A rare event occurred!',
+                        NULL,
+                        NULL,
+                        'https://imgur.com/destroy_rare.png',
+                        '{user} claimed the rare item!',
+                        '{user} destroyed the rare item!',
                         NULL,
                         30
                     )
-                ''', (guild.id,))
+                    ''', (guild.id,))
+
                 await conn.commit()
 
             logger.info(f"Initialized item_settings for new guild {guild.id}")
 
         except Exception:
             logger.exception(f"Failed to initialize settings for new guild {guild.id}")
+
+    @app_commands.command(description="Owner: Patch existing tables with new fields")
+    async def patch_item_settings(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+            return
+
+        try:
+            async with aiosqlite.connect(DB_PATH) as conn:
+                # Attempt to add each new column
+                new_columns = [
+                    "rare_default_text",
+                    "rare_claim_image",
+                    "rare_destroy_image",
+                    "rare_claim_text",
+                    "rare_destroy_text"
+                ]
+
+                for column in new_columns:
+                    try:
+                        await conn.execute(f"ALTER TABLE item_settings ADD COLUMN {column} TEXT")
+                    except aiosqlite.OperationalError:
+                        pass  # Column already exists
+
+                # Fill defaults where values are still NULL
+                await conn.execute('''
+                    UPDATE item_settings
+                    SET
+                        rare_default_text = COALESCE(rare_default_text, 'A rare event occurred!'),
+                        rare_claim_image = COALESCE(rare_claim_image, NULL),
+                        rare_destroy_image = COALESCE(rare_destroy_image, NULL),
+                        rare_claim_text = COALESCE(rare_claim_text, '{user} claimed the rare item!'),
+                        rare_destroy_text = COALESCE(rare_destroy_text, '{user} destroyed the rare item!')
+                ''')
+                await conn.commit()
+
+            await interaction.response.send_message("`item_settings` table successfully patched!", ephemeral=True)
+            logger.info(f"{interaction.user} patched item_settings table in guild {interaction.guild.id}")
+
+        except Exception as e:
+            logger.exception("Failed to patch item_settings.")
+            await interaction.response.send_message(f"Failed to patch table: `{e}`", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -835,9 +1021,14 @@ async def setup(bot):
                 destroy_image_url TEXT,
                 rare_message TEXT,
                 rare_image_url TEXT,
+                rare_default_text TEXT,
+                rare_claim_image TEXT,
+                rare_destroy_image TEXT,
+                rare_claim_text TEXT,
+                rare_destroy_text TEXT,
                 rare_role_id INTEGER
             )
-        ''')
+            ''')
 
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS item_stats (

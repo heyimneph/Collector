@@ -16,6 +16,66 @@ from config import OWNER_ID
 # Logging Configuration
 # ---------------------------------------------------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Help Modals
+# ---------------------------------------------------------------------------------------------------------------------
+class SuggestionModal(discord.ui.Modal):
+    def __init__(self, bot):
+        super().__init__(title="Submit a Suggestion")
+        self.bot = bot
+
+    ticket_name = discord.ui.TextInput(label="Ticket Name", style=discord.TextStyle.short, required=True)
+    suggestion = discord.ui.TextInput(label="Describe your suggestion", style=discord.TextStyle.long, required=True)
+    additional_info = discord.ui.TextInput(label="Additional information", style=discord.TextStyle.long, required=False)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        user = interaction.user
+        current_time = discord.utils.utcnow()
+        formatted_time = current_time.strftime("%d/%m/%Y")
+
+        async with aiosqlite.connect(DB_PATH) as conn:
+            cursor = await conn.execute("SELECT 1 FROM blacklist WHERE user_id = ?", (interaction.user.id,))
+            if await cursor.fetchone():
+                support_url = "https://discord.gg/SXmXmteyZ3"  # Your support server link
+                response_message = ("You are blacklisted from making suggestions. "
+                                    f"If you believe this is a mistake, please contact us: [Support Server]({support_url}).")
+                await interaction.response.send_message(response_message, ephemeral=True)
+                return
+            colour = await get_embed_colour(interaction.guild.id)
+
+        channel = self.bot.get_channel(1268168019297697914)
+        if channel:
+            embed = discord.Embed(title=f"Suggestion: {self.ticket_name.value}",
+                                  description=f"```{self.suggestion.value}```",
+                                  color=colour)
+            embed.add_field(name="Additional Information",
+                            value=f"```{self.additional_info.value or 'None provided'}```",
+                            inline=False)
+            embed.set_footer(text=f"Submitted by {user.name} on {formatted_time}")
+
+            view = View()
+            view.add_item(BlacklistButton(interaction.user.id))
+
+            await channel.send(embed=embed, view=view)
+            await interaction.response.send_message("Your suggestion has been submitted successfully!", ephemeral=True)
+        else:
+            await interaction.response.send_message("Failed to send suggestion. Support channel not found.", ephemeral=True)
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Buttons and Views
+# ---------------------------------------------------------------------------------------------------------------------
+class BlacklistButton(discord.ui.Button):
+    def __init__(self, user_id):
+        super().__init__(style=discord.ButtonStyle.danger, label="Blacklist User")
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction):
+        async with aiosqlite.connect(DB_PATH) as conn:
+            await conn.execute("INSERT OR IGNORE INTO blacklist (user_id) VALUES (?)", (self.user_id,))
+            await conn.commit()
+        await interaction.response.send_message("User has been blacklisted from making suggestions.", ephemeral=True)
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Help View
 # ---------------------------------------------------------------------------------------------------------------------
@@ -138,10 +198,16 @@ class UtilityCog(commands.Cog):
                     "2. Try `/set_drop_channel` \n"
                     "*This will limit where Eggbot posts*\n"
                     "3. Try `/leaderboard` \n"
-                    "*See how you compare locally and globally!"
-                )
+                    "*See how you compare locally and globally!\n\n"
+                    "I am an open source project - check me out [here](https://github.com/heyimneph/Collector)!"                )
             )
-            help_intro.add_field(name="",value="",inline=False)
+            help_intro.add_field(name="Need Support?",
+                                 value="*Sometimes, things don't work as expected. If you need assistance or "
+                                       "would like to report an issue you can join our "
+                                       "[support server](https://discord.gg/SXmXmteyZ3) and create a ticket. We'd be "
+                                       "happy to help!*",
+                                 inline=False)
+
             pages.append(help_intro)
 
             # Generating command pages
@@ -164,12 +230,18 @@ class UtilityCog(commands.Cog):
             updates_page = discord.Embed(
                 title="Latest Updates",
                 description=(
+                    "15/07/2025 \n"
+                    "- Added Support server link \n"
+                    "- Added `/suggestion` command \n"
+                    "- Updated Command texts \n"
+                    "- Added more customisation commands (rare options) \n\n"
                     "14/07/2025 \n"
                     "- Massive QoL improvements \n"
                     "- More customisation \n"
                     "- Added a 'rare' drop' \n\n"
                     "11/07/2025\n"
                     "- Eggbot is live \n\n"
+                    "Please leave a review/rating here: https://top.gg/bot/1268589797149118670"
                 ),
                 color=colour
             )
@@ -182,6 +254,20 @@ class UtilityCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error with Help command: {e}")
             await interaction.response.send_message("Failed to fetch help information.", ephemeral=True)
+        finally:
+            await log_command_usage(self.bot, interaction)
+
+    # ---------------------------------------------------------------------------------------------------------------------
+
+    @app_commands.command(name="suggest", description="User: Make a suggestion for Misu")
+    async def suggest(self, interaction: discord.Interaction):
+        try:
+            modal = SuggestionModal(self.bot)
+            await interaction.response.send_modal(modal)
+            await log_command_usage(self.bot, interaction)
+        except Exception as e:
+            logger.error(f"Failed to launch suggestion modal: {e}")
+            await interaction.response.send_message("Failed to launch the suggestion modal.", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
 
