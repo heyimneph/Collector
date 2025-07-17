@@ -15,6 +15,35 @@ from config import OWNER_ID
 logger = logging.getLogger(__name__)
 
 
+async def patch_null_item_settings():
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute('''
+            UPDATE item_settings
+            SET
+                message = COALESCE(message, 'Something dropped! Claim it or Destroy it!'),
+                image_url = COALESCE(image_url, 'https://imgur.com/VZtZTOm.png'),
+                claim_text = COALESCE(claim_text, '{user} claimed it!'),
+                destroy_text = COALESCE(destroy_text, '{user} destroyed it!'),
+                claim_image_url = COALESCE(claim_image_url, 'https://imgur.com/VZtZTOm.png'),
+                destroy_image_url = COALESCE(destroy_image_url, 'https://imgur.com/UtVm1W9.png'),
+                rare_message = COALESCE(rare_message, 'A rare item has appeared! Be the first to claim it!'),
+                rare_image_url = COALESCE(rare_image_url, 'https://imgur.com/GLszyDB.png'),
+                rare_default_text = COALESCE(rare_default_text, 'A rare event occurred!'),
+                rare_claim_image = COALESCE(rare_claim_image, NULL),
+                rare_destroy_image = COALESCE(rare_destroy_image, NULL),
+                rare_claim_text = COALESCE(rare_claim_text, '{user} claimed the rare item!'),
+                rare_destroy_text = COALESCE(rare_destroy_text, '{user} destroyed the rare item!'),
+                rare_role_id = COALESCE(rare_role_id, NULL),
+                drop_expiry_minutes = COALESCE(drop_expiry_minutes, 30)
+            WHERE
+                message IS NULL OR
+                image_url IS NULL OR
+                claim_text IS NULL OR
+                destroy_text IS NULL
+        ''')
+        await conn.commit()
+
+
 # -----------------------------------------------------------------------------------------------------------------
 # Game Buttons
 # -----------------------------------------------------------------------------------------------------------------
@@ -93,12 +122,20 @@ class ItemView(discord.ui.View):
                 role = interaction.guild.get_role(rare_role_id)
                 if role:
                     try:
+                        # Remove rare role from all members who currently have it
+                        for member in role.members:
+                            if member != interaction.user:
+                                await member.remove_roles(role, reason="Reassigned rare drop role")
+
+                        # Assign the role to the current user
                         await interaction.user.add_roles(role, reason="Claimed rare drop")
-                        logger.info(f"Gave rare role {role.id} to {interaction.user} in guild {interaction.guild.id}")
+                        logger.info(
+                            f"Assigned rare role {role.id} to {interaction.user} in guild {interaction.guild.id}")
+
                     except discord.Forbidden:
-                        logger.warning(f"Missing permission to assign role {role.id} in guild {interaction.guild.id}")
+                        logger.warning(f"Missing permission to modify role {role.id} in guild {interaction.guild.id}")
                     except Exception as e:
-                        logger.exception(f"Unexpected error assigning rare role: {e}")
+                        logger.exception(f"Error managing rare role: {e}")
 
             logger.info(f"{interaction.user} claimed an item in guild {interaction.guild.id}")
 
@@ -936,13 +973,12 @@ class ItemDrop(commands.Cog):
                         'A rare event occurred!',
                         NULL,
                         NULL,
-                        'https://imgur.com/destroy_rare.png',
                         '{user} claimed the rare item!',
                         '{user} destroyed the rare item!',
                         NULL,
                         30
                     )
-                    ''', (guild.id,))
+                ''', (guild.id,))
 
                 await conn.commit()
 
@@ -950,6 +986,10 @@ class ItemDrop(commands.Cog):
 
         except Exception:
             logger.exception(f"Failed to initialize settings for new guild {guild.id}")
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Patch Commands
+# ---------------------------------------------------------------------------------------------------------------------
 
     @app_commands.command(description="Owner: Patch existing tables with new fields")
     async def patch_item_settings(self, interaction: discord.Interaction):
@@ -994,6 +1034,20 @@ class ItemDrop(commands.Cog):
             await interaction.response.send_message(f"Failed to patch table: `{e}`", ephemeral=True)
         finally:
             await log_command_usage(self.bot, interaction)
+
+
+    @app_commands.command(description="Owner: Patch broken item_settings rows with default values.")
+    async def patch_null_rows(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+            return
+
+        try:
+            await patch_null_item_settings()
+            await interaction.response.send_message("Patched null entries in `item_settings`.", ephemeral=True)
+        except Exception as e:
+            logger.exception("Failed to patch null item_settings row.")
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

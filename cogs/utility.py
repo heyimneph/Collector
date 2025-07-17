@@ -198,7 +198,7 @@ class UtilityCog(commands.Cog):
                     "2. Try `/set_drop_channel` \n"
                     "*This will limit where Eggbot posts*\n"
                     "3. Try `/leaderboard` \n"
-                    "*See how you compare locally and globally!\n\n"
+                    "*See how you compare locally and globally!*\n\n"
                     "I am an open source project - check me out [here](https://github.com/heyimneph/Collector)!"                )
             )
             help_intro.add_field(name="Need Support?",
@@ -241,7 +241,7 @@ class UtilityCog(commands.Cog):
                     "- Added a 'rare' drop' \n\n"
                     "11/07/2025\n"
                     "- Eggbot is live \n\n"
-                    "Please leave a review/rating here: https://top.gg/bot/1268589797149118670"
+                   # "Please leave a review/rating here: https://top.gg/bot/1268589797149118670"
                 ),
                 color=colour
             )
@@ -259,7 +259,7 @@ class UtilityCog(commands.Cog):
 
     # ---------------------------------------------------------------------------------------------------------------------
 
-    @app_commands.command(name="suggest", description="User: Make a suggestion for Misu")
+    @app_commands.command(name="suggest", description="User: Make a suggestion for Eggbot")
     async def suggest(self, interaction: discord.Interaction):
         try:
             modal = SuggestionModal(self.bot)
