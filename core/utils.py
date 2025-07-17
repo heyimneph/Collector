@@ -3,26 +3,15 @@ import os
 import logging
 import aiosqlite
 from functools import wraps
+from discord import app_commands
 from discord.ui import View, Button
 
-from config import OWNER_ID
+from config import OWNER_ID, DB_PATH
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Logging Configuration
 # ---------------------------------------------------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------------------------------------------------
-# Database Configuration
-# ---------------------------------------------------------------------------------------------------------------------
-DB_DIR = os.path.join('data', 'databases')
-DB_PATH = os.path.join(DB_DIR, 'collector.db')
-os.makedirs(DB_DIR, exist_ok=True)
-
-
-def get_db_path() -> str:
-    """Return the location of the bot's SQLite database."""
-    return DB_PATH
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -42,7 +31,29 @@ async def get_embed_colour(guild_id):
     except Exception as e:
         logger.error(f"Failed to retrieve custom embed color: {e}")
 
-    return 0xc4a7ec  # fallback default (light purple)
+    return 0xc4a7ec
+
+
+async def get_bio_settings():
+    """Returns the activity_type and bio string from the database, or (None, None) if missing."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            async with conn.execute(
+                    'SELECT value FROM customisation WHERE type = ?', ("activity_type",)
+            ) as cursor:
+                activity_type_doc = await cursor.fetchone()
+
+            async with conn.execute(
+                    'SELECT value FROM customisation WHERE type = ?', ("bio",)
+            ) as cursor:
+                bio_doc = await cursor.fetchone()
+
+        if activity_type_doc and bio_doc:
+            return activity_type_doc[0], bio_doc[0]
+    except Exception as e:
+        logger.error(f"Failed to retrieve bio settings: {e}")
+
+    return None, None
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -130,3 +141,21 @@ async def check_permissions(interaction):
         ''', (interaction.guild_id, interaction.user.id))
         permission = await cursor.fetchone()
         return permission and permission[0]
+
+
+async def owner_check(interaction):
+    return interaction.user.id == OWNER_ID
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Decorators
+# ---------------------------------------------------------------------------------------------------------------------
+
+def only_owner():
+    async def predicate(interaction: discord.Interaction):
+        return await owner_check(interaction)
+    return app_commands.check(predicate)
+
+def admin_check():
+    async def predicate(interaction: discord.Interaction):
+        return await check_permissions(interaction)
+    return app_commands.check(predicate)

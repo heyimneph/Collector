@@ -1,63 +1,59 @@
-import discord
-import aiosqlite
-import asyncio
 import os
-from datetime import datetime, timezone
-from config import client, DISCORD_TOKEN, perform_sync
+import discord
+import asyncio
+import logging
+from config import client, DISCORD_TOKEN, perform_sync, TEST_GUILD_ID
 
-# Ensure the database directory exists
-os.makedirs('./data/databases', exist_ok=True)
+logger = logging.getLogger(__name__)
 
-# Path to SQLite database
-db_path = './data/databases/collector.db'
-
-# ---------------------------------------------------------------------------------------------------------------------
-# Customisation Functions
-# ---------------------------------------------------------------------------------------------------------------------
-
-async def get_embed_colour():
-    async with aiosqlite.connect(db_path) as conn:
-        async with conn.execute('SELECT value FROM customisation WHERE type = ?', ("embed_color",)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return int(row[0], 16)
-            return 0x3498db
-
-async def get_bio_settings():
-    async with aiosqlite.connect(db_path) as conn:
-        async with conn.execute('SELECT value FROM customisation WHERE type = ?', ("activity_type",)) as cursor:
-            activity_type_doc = await cursor.fetchone()
-        async with conn.execute('SELECT value FROM customisation WHERE type = ?', ("bio",)) as cursor:
-            bio_doc = await cursor.fetchone()
-        if activity_type_doc and bio_doc:
-            return activity_type_doc[0], bio_doc[0]
-        return None, None
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Event Handlers
+# Sync on Ready
 # ---------------------------------------------------------------------------------------------------------------------
-
 @client.event
 async def on_ready():
-    print(f'Bot is logged in as {client.user.name} ({client.user.id})')
-    synced_count = await perform_sync()
-    print(f"{synced_count} commands synced")
+    logger.info(f"Bot logged in as {client.user} (ID: {client.user.id})")
+
+    if TEST_GUILD_ID and not hasattr(client, "synced"):
+        try:
+            await perform_sync(guild=discord.Object(id=TEST_GUILD_ID))
+            client.synced = True
+            logger.info(f"Synced slash commands to test guild: {TEST_GUILD_ID}")
+        except Exception as e:
+            logger.exception(f"Failed to sync commands to test guild {TEST_GUILD_ID}: {e}")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Sync on Guild Join
+# ---------------------------------------------------------------------------------------------------------------------
+@client.event
+async def on_guild_join(guild: discord.Guild):
+    try:
+        await perform_sync(guild=guild)
+        logger.info(f"Auto-synced commands to new guild: {guild.name} ({guild.id})")
+    except Exception as e:
+        logger.exception(f"Failed to sync on guild join for {guild.id}: {e}")
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Main Function
 # ---------------------------------------------------------------------------------------------------------------------
-
 async def main():
-    await client.load_extension("core.initialisation")
+    try:
+        await client.load_extension("core.initialisation")
+        logger.info("Loaded core.initialisation")
 
-    for filename in os.listdir('cogs'):
-        if filename.endswith('.py'):
-            await client.load_extension(f'cogs.{filename[:-3]}')
-            print(f"Loading {filename[:-3]}...")
+        for filename in os.listdir("cogs"):
+            if filename.endswith(".py"):
+                await client.load_extension(f"cogs.{filename[:-3]}")
+                logger.info(f"Loaded cog: {filename[:-3]}")
 
-    print("Starting Bot...")
+        logger.info("Starting bot...")
+        await client.start(DISCORD_TOKEN)
 
-    await client.start(DISCORD_TOKEN)
+    except Exception as e:
+        logger.exception(f"Unhandled exception during startup: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

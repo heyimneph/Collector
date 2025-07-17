@@ -1,22 +1,22 @@
 import discord
 import logging
 import aiosqlite
+
 from discord import app_commands
 from discord.ext import commands
-from discord.ext.commands import has_permissions
 
-from core.utils import log_command_usage, check_permissions, DB_PATH
-from config import OWNER_ID
+from core.utils import log_command_usage, check_permissions, owner_check
+from config import DB_PATH
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Logging Configuration
 # ---------------------------------------------------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Customisation Functions
 # ---------------------------------------------------------------------------------------------------------------------
-
 async def get_bio_settings():
     try:
         async with aiosqlite.connect(DB_PATH) as conn:
@@ -31,6 +31,7 @@ async def get_bio_settings():
         logger.error(f"Failed to retrieve bio settings: {e}")
         return None, None
 
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Customisation Cog
 # ---------------------------------------------------------------------------------------------------------------------
@@ -39,13 +40,11 @@ class CustomisationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def owner_check(self, interaction: discord.Interaction):
-        return interaction.user.id == OWNER_ID
-
     # ---------------------------------------------------------------------------------------------------------------------
     @app_commands.command(description="Owner: Change the bot's avatar.")
+    @app_commands.default_permissions(administrator=True)
     async def change_avatar(self, interaction: discord.Interaction, url: str):
-        if not await self.owner_check(interaction):
+        if not await owner_check(interaction):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
@@ -81,8 +80,8 @@ class CustomisationCog(commands.Cog):
                 color_obj = discord.Color(int(color, 16))
 
                 async with conn.execute(
-                    'SELECT value FROM customisation WHERE type = ? AND guild_id = ?',
-                    ("embed_color", interaction.guild_id)) as cursor:
+                        'SELECT value FROM customisation WHERE type = ? AND guild_id = ?',
+                        ("embed_color", interaction.guild_id)) as cursor:
                     embed_color_doc = await cursor.fetchone()
 
                 if not embed_color_doc:
@@ -110,8 +109,9 @@ class CustomisationCog(commands.Cog):
 
     # ---------------------------------------------------------------------------------------------------------------------
     @app_commands.command(description="Owner: Change Bot's Bio.")
+    @app_commands.default_permissions(administrator=True)
     async def set_bio(self, interaction: discord.Interaction, activity_type: str, bio: str):
-        if not await self.owner_check(interaction):
+        if not await owner_check(interaction):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
@@ -140,7 +140,8 @@ class CustomisationCog(commands.Cog):
                 await conn.commit()
 
                 # Send a confirmation message
-                await interaction.response.send_message(f"`Success: Bot's activity has been set to {activity_type} '{bio}'`", ephemeral=True)
+                await interaction.response.send_message(
+                    f"`Success: Bot's activity has been set to {activity_type} '{bio}'`", ephemeral=True)
 
             except Exception as e:
                 logger.error(f"An error occurred: {str(e)}")
@@ -151,12 +152,13 @@ class CustomisationCog(commands.Cog):
     @set_bio.autocomplete("activity_type")
     async def activity_type_autocomplete(self, interaction: discord.Interaction, current: str):
         activity_types = ["playing", "listening", "watching"]
-        return [app_commands.Choice(name=atype, value=atype) for atype in activity_types if current.lower() in atype.lower()]
+        return [app_commands.Choice(name=atype, value=atype) for atype in activity_types if
+                current.lower() in atype.lower()]
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Setup Function
 # ---------------------------------------------------------------------------------------------------------------------
-
 async def setup(bot):
     async with aiosqlite.connect(DB_PATH) as conn:
         await conn.execute('''

@@ -5,52 +5,74 @@ import logging
 from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
+from discord.ext.commands import Context, is_owner
 
-from discord.ext.commands import is_owner, Context
-
-# Loads the .env file that resides on the same level as the script
+# Load environment variables
 load_dotenv(".env")
 
-# Grab API tokens from the .env file and other things
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
+TEST_GUILD_ID = int(os.getenv("TEST_GUILD_ID", 0)) or None
 
-# Discord
-DISCORD_PREFIX = "%"
 
-# Other External Keys
+DISCORD_PREFIX = "!"
 LAUNCH_TIME = datetime.utcnow()
 
 
-# Login Clients
+# ---------------------------------------------------------------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------------------------------------------------------------
+DB_DIR = os.path.join('data', 'databases')
+DB_PATH = os.path.join(DB_DIR, 'collector.db')
+os.makedirs(DB_DIR, exist_ok=True)
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------------------------------------------------------------
+os.makedirs("data/logs", exist_ok=True)
+os.makedirs("data/databases", exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler("data/logs/discord.log", encoding="utf-8", mode="w"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Bot Setup
+# ---------------------------------------------------------------------------------------------------------------------
 intents = discord.Intents.default()
 intents.guilds = True
+intents.message_content = True
+
+client = commands.Bot(
+    command_prefix=DISCORD_PREFIX,
+    intents=intents,
+    help_command=None,
+    activity=discord.Activity(type=discord.ActivityType.playing, name="games -- /help")
+)
 
 
-# Ensure the logs directory exists
-os.makedirs('data', exist_ok=True)
-os.makedirs('data/logs', exist_ok=True)
-os.makedirs('data/databases', exist_ok=True)
+# ---------------------------------------------------------------------------------------------------------------------
+# Sync Function
+# ---------------------------------------------------------------------------------------------------------------------
+async def perform_sync(guild: discord.abc.Snowflake):
+    try:
+        client.tree.clear_commands(guild=guild)
+        client.tree.copy_global_to(guild=guild)
+        synced = await client.tree.sync(guild=guild)
+
+        logger.info(f"Synced {len(synced)} command(s) to guild: {getattr(guild, 'name', 'Unknown')} ({guild.id})")
+        return len(synced)
+
+    except Exception as e:
+        logger.exception(f"Failed to sync commands: {e}")
+        return 0
 
 
-logging.basicConfig(level=logging.ERROR)
-logger = logging.getLogger('discord')
-handler = logging.FileHandler(filename='data/logs/discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
 
-client = commands.Bot(command_prefix=DISCORD_PREFIX, intents=intents, help_command=None,
-                      activity=discord.Activity(type=discord.ActivityType.playing, name="games -- /help"))
-
-async def perform_sync():
-    synced = await client.tree.sync()
-    return len(synced)
-
-@client.command()
-@is_owner()
-async def sync(ctx: Context) -> None:
-    synced = await client.tree.sync()
-    await ctx.reply("{} commands synced".format(len(synced)))
-
-if __name__ == "__main__":
-    client.run(DISCORD_TOKEN)
